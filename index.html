@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Hydro-Crop | Geospatial & Crop Intelligence</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet & Draw CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #060913; color: #f8fafc; overflow: hidden; }
+        .glass-panel { background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid rgba(56, 189, 248, 0.2); }
+        .glass-card { background: rgba(30, 41, 59, 0.55); border: 1px solid rgba(148, 163, 184, 0.15); transition: all 0.2s ease; }
+        .glass-card:hover { border-color: rgba(56, 189, 248, 0.45); transform: translateY(-1px); }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #0284c7; }
+
+        /* Leaflet Dark Theme Overrides */
+        .leaflet-control-zoom a { background-color: #0f172a !important; color: #38bdf8 !important; border-color: #334155 !important; }
+        .leaflet-draw-toolbar a { background-color: #0f172a !important; border-color: #334155 !important; }
+        .leaflet-draw-actions a { background-color: #0284c7 !important; color: #ffffff !important; }
+    </style>
+</head>
+<body class="flex flex-col h-screen w-screen select-none">
+
+    <!-- Top Modern Navbar -->
+    <header class="glass-panel z-30 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 border-b border-sky-500/30">
+        <!-- Brand Logo -->
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500/20 to-emerald-500/20 border border-sky-400/40 flex items-center justify-center shadow-lg shadow-sky-500/10">
+                <!-- Custom Hydro-Crop Vector Emblem -->
+                <svg class="w-6 h-6" viewBox="0 0 36 36" fill="none">
+                    <circle cx="18" cy="18" r="15" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="3 2"/>
+                    <path d="M7 21C11 16 15 16 18 20C21 24 25 23 29 18" stroke="#0ea5e9" stroke-width="2.5" stroke-linecap="round"/>
+                    <path d="M9 15C13 12 17 13 20 16" stroke="#10b981" stroke-width="2.2" stroke-linecap="round"/>
+                    <circle cx="25" cy="11" r="2.2" fill="#38bdf8"/>
+                </svg>
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-base md:text-lg font-extrabold tracking-tight text-white">HYDRO-<span class="text-sky-400">CROP</span></h1>
+                    <span class="hidden sm:inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">LIVE DSS</span>
+                </div>
+                <p class="text-[10px] text-slate-400 font-medium tracking-wider uppercase">Geospatial & Crop Intelligence</p>
+            </div>
+        </div>
+
+        <!-- Google Maps Style Live Village/City Search -->
+        <div class="relative flex-1 max-w-md min-w-[240px]">
+            <div class="flex items-center bg-slate-900/90 border border-slate-700 focus-within:border-sky-400 rounded-xl px-3 py-1.5 shadow-inner transition">
+                <svg class="w-4 h-4 text-sky-400 mr-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <input type="text" id="placeSearch" placeholder="Search village, tehsil, dam or city (e.g. Ganjbasoda)..." class="bg-transparent text-xs md:text-sm text-white placeholder-slate-400 w-full focus:outline-none" autocomplete="off">
+                <button onclick="manualSearch()" class="ml-2 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs px-3 py-1 rounded-lg transition">Go</button>
+            </div>
+            <div id="suggestionsList" class="hidden absolute left-0 right-0 mt-1.5 glass-panel rounded-xl shadow-2xl overflow-hidden z-50 max-h-60 overflow-y-auto"></div>
+        </div>
+
+        <!-- Quick Action Controls -->
+        <div class="hidden lg:flex items-center gap-2">
+            <button onclick="startPolygonDraw()" class="bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-lg shadow-sky-500/20 transition">
+                <span>⬠</span> Draw Parcel
+            </button>
+            <button onclick="resetWorkspace()" class="bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-300 border border-slate-700 font-semibold text-xs px-3 py-2 rounded-xl transition">
+                Reset
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace (Split Map + Analytics Drawer) -->
+    <div class="flex-1 flex flex-col md:flex-row relative overflow-hidden">
+        
+        <!-- Interactive Satellite Map -->
+        <div id="map" class="w-full h-[52%] md:h-full md:flex-1 z-10"></div>
+
+        <!-- Floating Mobile Draw Button -->
+        <div class="md:hidden absolute top-3 right-3 z-20 flex flex-col gap-2">
+            <button onclick="startPolygonDraw()" class="bg-sky-500 text-slate-950 font-extrabold text-xs px-3.5 py-2 rounded-full shadow-xl flex items-center gap-1">
+                <span>⬠</span> Draw Boundary
+            </button>
+            <button onclick="resetWorkspace()" class="bg-slate-900/90 text-rose-400 border border-slate-700 font-bold text-xs px-3.5 py-1.5 rounded-full shadow-lg">
+                Reset
+            </button>
+        </div>
+
+        <!-- Modern Analytics Dashboard Sidebar / Bottom Sheet -->
+        <aside id="dashboardPanel" class="w-full h-[48%] md:h-full md:w-[440px] lg:w-[480px] glass-panel border-t md:border-t-0 md:border-l border-slate-700/80 z-20 overflow-y-auto p-4 flex flex-col gap-4">
+            
+            <!-- Empty Welcome State -->
+            <div id="emptyState" class="my-auto text-center p-6 glass-card rounded-2xl">
+                <div class="w-12 h-12 rounded-2xl bg-sky-500/15 border border-sky-400/30 text-sky-400 flex items-center justify-center mx-auto mb-3 text-xl">🛰️</div>
+                <h2 class="text-sm font-bold text-white mb-1">Select Any Farm, Dam or Command Area</h2>
+                <p class="text-xs text-slate-400 leading-relaxed mb-4">
+                    Search any village above or tap <strong class="text-sky-400">Draw Parcel</strong> on the map to compute Cadastral Area, SRTM Elevation, Slope, 5-Year Rainfall, and Satellite Crop Analytics.
+                </p>
+                <button onclick="startPolygonDraw()" class="w-full bg-gradient-to-r from-sky-500 to-emerald-500 hover:opacity-95 text-slate-950 font-extrabold text-xs py-2.5 rounded-xl shadow-lg transition">
+                    + Start Drawing Boundary on Map
+                </button>
+            </div>
+
+            <!-- Active Analytics Content (Hidden until polygon drawn) -->
+            <div id="analyticsContent" class="hidden flex flex-col gap-4 pb-6">
+                
+                <!-- Status & Coordinates Pill -->
+                <div class="flex items-center justify-between bg-slate-900/80 border border-slate-700/70 rounded-xl px-3 py-2">
+                    <span id="coordBadge" class="text-[11px] font-semibold text-sky-400">📍 --° N, --° E</span>
+                    <span id="apiStatus" class="text-[10px] font-bold text-emerald-400">● Live Telemetry Ready</span>
+                </div>
+
+                <!-- 1. Cadastral Area & Terrain KPIs -->
+                <div>
+                    <h3 class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">1. Cadastral Geometry & SRTM Terrain</h3>
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <div class="glass-card rounded-xl p-3">
+                            <span class="text-[10px] font-bold text-slate-400 block">NET AREA (HECTARES)</span>
+                            <strong id="kpiHa" class="text-lg font-extrabold text-white block mt-0.5">0.00 ha</strong>
+                            <span id="kpiSqm" class="text-[10px] text-sky-400 font-medium">0 sq.m</span>
+                        </div>
+                        <div class="glass-card rounded-xl p-3">
+                            <span class="text-[10px] font-bold text-slate-400 block">ACRES & LOCAL UNIT</span>
+                            <strong id="kpiAcre" class="text-lg font-extrabold text-emerald-400 block mt-0.5">0.00 ac</strong>
+                            <span id="kpiBigha" class="text-[10px] text-slate-300 font-medium">~0.00 Bigha</span>
+                        </div>
+                        <div class="glass-card rounded-xl p-3">
+                            <span class="text-[10px] font-bold text-slate-400 block">MEAN ELEVATION (DEM)</span>
+                            <strong id="kpiElev" class="text-base font-extrabold text-amber-400 block mt-0.5">-- m MSL</strong>
+                            <span id="kpiElevRange" class="text-[10px] text-slate-400">Min-Max: --</span>
+                        </div>
+                        <div class="glass-card rounded-xl p-3">
+                            <span class="text-[10px] font-bold text-slate-400 block">PERIMETER & SLOPE</span>
+                            <strong id="kpiPerim" class="text-base font-extrabold text-purple-400 block mt-0.5">0 m</strong>
+                            <span id="kpiSlope" class="text-[10px] text-slate-400">Gradient: --%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. 5-Year Real Satellite Rainfall Chart (Open-Meteo API) -->
+                <div class="glass-card rounded-2xl p-3.5">
+                    <div class="flex items-center justify-between mb-2">
+                        <div>
+                            <h3 class="text-xs font-bold text-white">2. 5-Year Annual Rainfall (2021–2025)</h3>
+                            <p class="text-[10px] text-slate-400">Real-time meteorological archive (mm/year)</p>
+                        </div>
+                        <span id="avgRainBadge" class="text-[10px] font-bold bg-sky-500/20 text-sky-300 px-2 py-1 rounded-lg">Avg: -- mm</span>
+                    </div>
+                    <div class="h-44 w-full">
+                        <canvas id="rainChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 3. Land Use & Cropping Intensity Split Chart -->
+                <div class="glass-card rounded-2xl p-3.5">
+                    <div class="flex items-center justify-between mb-2">
+                        <div>
+                            <h3 class="text-xs font-bold text-white">3. Command Area Utilization Model</h3>
+                            <p class="text-[10px] text-slate-400">Estimated Irrigated vs Rainfed Potential</p>
+                        </div>
+                    </div>
+                    <div class="h-40 w-full flex items-center justify-center">
+                        <canvas id="landChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 4. Deep Sentinel-2 GEE Satellite Engine Launch -->
+                <div class="glass-card rounded-2xl p-3.5 border-sky-500/40 bg-gradient-to-br from-slate-900 to-sky-950/40">
+                    <h3 class="text-xs font-bold text-white mb-1">4. Deep 10m Sentinel-2 Crop & NDVI Audit</h3>
+                    <p class="text-[10.5px] text-slate-300 mb-3 leading-relaxed">
+                        Open this exact parcel in your Google Earth Engine engine for pixel-by-pixel Kharif/Rabi crop maps and 10m GeoTIFF rasters.
+                    </p>
+                    <button onclick="launchGEEEngine()" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs py-2.5 rounded-xl shadow-lg shadow-emerald-500/20 transition flex items-center justify-center gap-2">
+                        <span>🛰️</span> Launch Sentinel-2 Crop & NDVI Map ↗
+                    </button>
+                </div>
+
+                <!-- 5. Instant GIS & Excel Export Center -->
+                <div class="glass-card rounded-2xl p-3.5">
+                    <h3 class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2.5">5. Instant GIS, CAD & Report Exports</h3>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button onclick="exportCSV()" class="bg-slate-800 hover:bg-sky-500/20 text-sky-400 border border-slate-700 font-bold text-[11px] py-2 rounded-xl transition">
+                            📥 CSV Report
+                        </button>
+                        <button onclick="exportGeoJSON()" class="bg-slate-800 hover:bg-emerald-500/20 text-emerald-400 border border-slate-700 font-bold text-[11px] py-2 rounded-xl transition">
+                            🗺️ GeoJSON
+                        </button>
+                        <button onclick="exportKML()" class="bg-slate-800 hover:bg-amber-500/20 text-amber-400 border border-slate-700 font-bold text-[11px] py-2 rounded-xl transition">
+                            🌍 Google KML
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </aside>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+        // Your Published Google Earth Engine App URL
+        const GEE_APP_URL = "https://ee-itsengineeraj.projects.earthengine.app/view/hydro-crop-tracker";
+
+        let currentGeoJSON = null;
+        let currentMetrics = {};
+        let rainChartInstance = null;
+        let landChartInstance = null;
+
+        // 1. Initialize High-Res Esri Satellite Map with Labels
+        const map = L.map('map', { zoomControl: true }).setView([23.5204, 77.8124], 14);
+        
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Esri Satellite Imagery',
+            maxZoom: 19
+        }).addTo(map);
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
+            subdomains: 'abcd',
+            maxZoom: 19
+        }).addTo(map);
+
+        // 2. Live Village & City Autocomplete Search (Nominatim API)
+        const searchInput = document.getElementById('placeSearch');
+        const suggestionsBox = document.getElementById('suggestionsList');
+        let debounceTimer = null;
+
+        searchInput.addEventListener('input', () => {
+            clearTimeout(debounceTimer);
+            const q = searchInput.value.trim();
+            if (q.length < 3) {
+                suggestionsBox.classList.add('hidden');
+                return;
+            }
+            debounceTimer = setTimeout(() => searchLocation(q), 350);
+        });
+
+        async function searchLocation(query) {
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=in&limit=6&q=${encodeURIComponent(query)}`);
+                const data = await res.json();
+                suggestionsBox.innerHTML = '';
+
+                if (data.length === 0) {
+                    suggestionsBox.innerHTML = `<div class="p-3 text-xs text-slate-400">No village or town found. Try nearest Tehsil name.</div>`;
+                } else {
+                    data.forEach(item => {
+                        const title = item.display_name.split(',')[0];
+                        const div = document.createElement('div');
+                        div.className = 'p-2.5 border-b border-slate-800 hover:bg-sky-500/20 cursor-pointer transition';
+                        div.innerHTML = `<div class="text-xs font-bold text-sky-400">📍 ${title}</div><div class="text-[10px] text-slate-400 truncate">${item.display_name}</div>`;
+                        div.onclick = () => {
+                            map.flyTo([parseFloat(item.lat), parseFloat(item.lon)], 15, { duration: 1.5 });
+                            searchInput.value = title;
+                            suggestionsBox.classList.add('hidden');
+                        };
+                        suggestionsBox.appendChild(div);
+                    });
+                }
+                suggestionsBox.classList.remove('hidden');
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function manualSearch() {
+            const q = searchInput.value.trim();
+            if (q.length >= 2) searchLocation(q);
+        }
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.relative')) suggestionsBox.classList.add('hidden');
+        });
+
+        // 3. Polygon Drawing Setup
+        const drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+
+        const drawControl = new L.Control.Draw({
+            edit: { featureGroup: drawnItems },
+            draw: {
+                polygon: {
+                    allowIntersection: false,
+                    shapeOptions: { color: '#38bdf8', weight: 3, fillColor: '#0284c7', fillOpacity: 0.25 }
+                },
+                rectangle: {
+                    shapeOptions: { color: '#38bdf8', weight: 3, fillColor: '#0284c7', fillOpacity: 0.25 }
+                },
+                polyline: false, circle: false, marker: false, circlemarker: false
+            }
+        });
+        map.addControl(drawControl);
+
+        let activeDrawer = null;
+        function startPolygonDraw() {
+            if (activeDrawer) activeDrawer.disable();
+            activeDrawer = new L.Draw.Polygon(map, drawControl.options.draw.polygon);
+            activeDrawer.enable();
+        }
+
+        function resetWorkspace() {
+            drawnItems.clearLayers();
+            currentGeoJSON = null;
+            document.getElementById('analyticsContent').classList.add('hidden');
+            document.getElementById('emptyState').classList.remove('hidden');
+        }
+
+        map.on(L.Draw.Event.CREATED, (e) => {
+            drawnItems.clearLayers();
+            drawnItems.addLayer(e.layer);
+            analyzeParcel(e.layer);
+        });
+
+        map.on(L.Draw.Event.EDITED, (e) => {
+            e.layers.eachLayer(layer => analyzeParcel(layer));
+        });
+
+        // 4. Master Analysis Engine (Geometry + DEM Elevation + 5-Yr Rainfall)
+        async function analyzeParcel(layer) {
+            currentGeoJSON = layer.toGeoJSON();
+            document.getElementById('emptyState').classList.add('hidden');
+            document.getElementById('analyticsContent').classList.remove('hidden');
+            document.getElementById('apiStatus').innerText = "⏳ Fetching DEM & Rainfall...";
+            document.getElementById('apiStatus').className = "text-[10px] font-bold text-amber-400";
+
+            // Geometry Calculations
+            const sqm = turf.area(currentGeoJSON);
+            const ha = (sqm / 10000).toFixed(2);
+            const acre = (sqm / 4046.86).toFixed(2);
+            const bigha = (ha * 3.95).toFixed(2);
+            const perimKm = turf.length(currentGeoJSON, { units: 'kilometers' });
+            const perimM = Math.round(perimKm * 1000);
+
+            const center = turf.center(currentGeoJSON).geometry.coordinates;
+            const lon = center[0].toFixed(5);
+            const lat = center[1].toFixed(5);
+
+            document.getElementById('coordBadge').innerText = `📍 ${lat}° N, ${lon}° E`;
+            document.getElementById('kpiHa').innerText = `${ha} ha`;
+            document.getElementById('kpiSqm').innerText = `${Math.round(sqm).toLocaleString()} sq.m`;
+            document.getElementById('kpiAcre').innerText = `${acre} ac`;
+            document.getElementById('kpiBigha').innerText = `~${bigha} Bigha`;
+            document.getElementById('kpiPerim').innerText = `${perimM.toLocaleString()} m`;
+
+            currentMetrics = { lat, lon, ha, acre, bigha, sqm: Math.round(sqm), perimM };
+
+            // Fetch Real Elevation (Open-Elevation API)
+            fetchElevationAndSlope(currentGeoJSON, lat, lon);
+
+            // Fetch Real 5-Year Rainfall (Open-Meteo Archive API)
+            await fetchFiveYearRainfall(lat, lon);
+
+            // Render Command Area Utilization Chart
+            renderLandChart(Number(ha));
+
+            document.getElementById('apiStatus').innerText = "● Live Data Synced";
+            document.getElementById('apiStatus').className = "text-[10px] font-bold text-emerald-400";
+        }
+
+        async function fetchElevationAndSlope(geojson, lat, lon) {
+            try {
+                const coords = geojson.geometry.coordinates[0];
+                const samplePts = coords.slice(0, 6).map(c => `${c[1].toFixed(5)},${c[0].toFixed(5)}`).join('|');
+                const res = await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${samplePts}`);
+                const data = await res.json();
+                if (data && data.results && data.results.length > 0) {
+                    const elevs = data.results.map(r => r.elevation);
+                    const minE = Math.min(...elevs);
+                    const maxE = Math.max(...elevs);
+                    const meanE = (elevs.reduce((a, b) => a + b, 0) / elevs.length).toFixed(1);
+                    const relief = maxE - minE;
+                    const approxSpan = Math.sqrt(currentMetrics.sqm) || 100;
+                    const slopePct = ((relief / approxSpan) * 100).toFixed(1);
+
+                    document.getElementById('kpiElev').innerText = `${meanE} m MSL`;
+                    document.getElementById('kpiElevRange').innerText = `Range: ${minE}m – ${maxE}m`;
+                    document.getElementById('kpiSlope').innerText = `Est. Slope: ${slopePct}%`;
+
+                    currentMetrics.meanElev = meanE;
+                    currentMetrics.minElev = minE;
+                    currentMetrics.maxElev = maxE;
+                    currentMetrics.slopePct = slopePct;
+                }
+            } catch (e) {
+                document.getElementById('kpiElev').innerText = "DEM Ready";
+            }
+        }
+
+        async function fetchFiveYearRainfall(lat, lon) {
+            try {
+                const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=2021-01-01&end_date=2025-12-31&daily=precipitation_sum&timezone=auto`;
+                const res = await fetch(url);
+                const data = await res.json();
+
+                const yearlyTotals = { '2021': 0, '2022': 0, '2023': 0, '2024': 0, '2025': 0 };
+                if (data && data.daily && data.daily.time) {
+                    data.daily.time.forEach((dateStr, idx) => {
+                        const yr = dateStr.substring(0, 4);
+                        if (yearlyTotals[yr] !== undefined && data.daily.precipitation_sum[idx] !== null) {
+                            yearlyTotals[yr] += data.daily.precipitation_sum[idx];
+                        }
+                    });
+                }
+
+                const labels = Object.keys(yearlyTotals);
+                const values = labels.map(y => Math.round(yearlyTotals[y]));
+                const avgRain = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+
+                document.getElementById('avgRainBadge').innerText = `5-Yr Avg: ${avgRain} mm`;
+                currentMetrics.rainfall = yearlyTotals;
+
+                renderRainChart(labels, values);
+            } catch (e) {
+                console.error("Rainfall API error:", e);
+            }
+        }
+
+        function renderRainChart(labels, values) {
+            const ctx = document.getElementById('rainChart').getContext('2d');
+            if (rainChartInstance) rainChartInstance.destroy();
+
+            rainChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Annual Rainfall (mm)',
+                        data: values,
+                        backgroundColor: 'rgba(56, 189, 248, 0.75)',
+                        borderColor: '#38bdf8',
+                        borderWidth: 1.5,
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: 'rgba(148, 163, 184, 0.1)' }, ticks: { color: '#94a3b8', font: { size: 10 } } },
+                        x: { grid: { display: false }, ticks: { color: '#cbd5e1', font: { size: 11, weight: 'bold' } } }
+                    }
+                }
+            });
+        }
+
+        function renderLandChart(totalHa) {
+            const ctx = document.getElementById('landChart').getContext('2d');
+            if (landChartInstance) landChartInstance.destroy();
+
+            const netCultivable = +(totalHa * 0.84).toFixed(2);
+            const bundsDrainage = +(totalHa * 0.10).toFixed(2);
+            const bufferZone = +(totalHa * 0.06).toFixed(2);
+
+            landChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Net Cultivable Command (ha)', 'Field Bunds & Channels (ha)', 'Buffer / Non-Agri (ha)'],
+                    datasets: [{
+                        data: [netCultivable, bundsDrainage, bufferZone],
+                        backgroundColor: ['#10b981', '#0ea5e9', '#64748b'],
+                        borderWidth: 0,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '62%',
+                    plugins: {
+                        legend: { position: 'right', labels: { color: '#cbd5e1', font: { size: 10 }, boxWidth: 10 } }
+                    }
+                }
+            });
+        }
+
+        function launchGEEEngine() {
+            window.open(GEE_APP_URL, '_blank');
+        }
+
+        // 5. Export Functions (CSV, GeoJSON, KML)
+        function downloadFile(content, fileName, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function exportCSV() {
+            if (!currentMetrics.ha) return;
+            const r = currentMetrics.rainfall || {};
+            const rows = [
+                ['Metric', 'Value', 'Unit'],
+                ['Latitude', currentMetrics.lat, 'Degrees'],
+                ['Longitude', currentMetrics.lon, 'Degrees'],
+                ['Net Area', currentMetrics.ha, 'Hectares'],
+                ['Area (Acres)', currentMetrics.acre, 'Acres'],
+                ['Area (Bigha)', currentMetrics.bigha, 'Bigha'],
+                ['Perimeter', currentMetrics.perimM, 'Meters'],
+                ['Mean Elevation', currentMetrics.meanElev || 'N/A', 'm MSL'],
+                ['Estimated Slope', currentMetrics.slopePct || 'N/A', '%'],
+                ['Rainfall 2021', Math.round(r['2021'] || 0), 'mm'],
+                ['Rainfall 2022', Math.round(r['2022'] || 0), 'mm'],
+                ['Rainfall 2023', Math.round(r['2023'] || 0), 'mm'],
+                ['Rainfall 2024', Math.round(r['2024'] || 0), 'mm'],
+                ['Rainfall 2025', Math.round(r['2025'] || 0), 'mm']
+            ];
+            const csvString = rows.map(e => e.join(',')).join('\n');
+            downloadFile(csvString, `HydroCrop_Report_${currentMetrics.lat}_${currentMetrics.lon}.csv`, 'text/csv');
+        }
+
+        function exportGeoJSON() {
+            if (!currentGeoJSON) return;
+            currentGeoJSON.properties = currentMetrics;
+            downloadFile(JSON.stringify(currentGeoJSON, null, 2), 'HydroCrop_Boundary.geojson', 'application/json');
+        }
+
+        function exportKML() {
+            if (!currentGeoJSON) return;
+            const coords = currentGeoJSON.geometry.coordinates[0].map(c => `${c[0]},${c[1]},0`).join(' ');
+            const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Hydro-Crop Parcel (${currentMetrics.ha} ha)</name>
+    <Placemark>
+      <name>Selected Parcel - ${currentMetrics.ha} ha</name>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>${coords}</coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+  </Document>
+</kml>`;
+            downloadFile(kml, 'HydroCrop_Boundary.kml', 'application/vnd.google-earth.kml+xml');
+        }
+    </script>
+</body>
+</html>
